@@ -28,8 +28,7 @@ impl Stack {
     }
 
     fn pop(&mut self) -> u16 {
-        let value = self.data.last().copied().unwrap();
-        self.data.dedup();
+        let value = self.data.pop().unwrap();
 
         value
     }
@@ -169,24 +168,38 @@ impl<'a> Chip8<'a> {
 
     fn op_8xy4(&mut self, opcode: &Opcode) {
         let sum = self.registers[opcode.y] as u16 + self.registers[opcode.x] as u16;
+        self.registers[opcode.x] = (sum & 0x00FF) as u8;
         self.registers[0xF] = if sum > 0xFF { 1 } else { 0 };
-        self.registers[opcode.x] = (sum & 0xFF) as u8;
     }
 
     fn op_8xy5(&mut self, opcode: &Opcode) {
         let res = self.registers[opcode.x].overflowing_sub(self.registers[opcode.y]);
-        self.registers[0xF] = if res.1 { 1 } else { 0 };
         self.registers[opcode.x] = res.0;
+        self.registers[0xF] = if res.1 { 0 } else { 1 };
     }
 
     fn op_8xy6(&mut self, opcode: &Opcode) {
-        self.registers[0xF] = self.registers[opcode.x] & 0x1;
+        //todo: should be configurable
+        self.registers[opcode.x] = self.registers[opcode.y];
+
+        let lsb = self.registers[opcode.x] & 0x1;
         self.registers[opcode.x] >>= 1;
+        self.registers[0xF] = lsb;
+    }
+
+    fn op_8xy7(&mut self, opcode: &Opcode) {
+        let res = self.registers[opcode.y].overflowing_sub(self.registers[opcode.x]);
+        self.registers[opcode.x] = res.0;
+        self.registers[0xF] = if res.1 { 0 } else { 1 };
     }
 
     fn op_8xye(&mut self, opcode: &Opcode) {
-        self.registers[0xF] = (self.registers[opcode.x] & 0x80) >> 7;
+        //todo: should be configurable
+        self.registers[opcode.x] = self.registers[opcode.y];
+
+        let msb = (self.registers[opcode.x] & 0x80) >> 7;
         self.registers[opcode.x] <<= 1;
+        self.registers[0xF] = msb;
     }
 
     fn op_9xy0(&mut self, opcode: &Opcode) {
@@ -221,6 +234,10 @@ impl<'a> Chip8<'a> {
             }
         }
         self.display.display();
+    }
+
+    fn op_fx1e(&mut self, opcode: &Opcode) {
+        self.index_register += self.registers[opcode.x] as u16;
     }
 
     fn op_fx33(&mut self, opcode: &Opcode) {
@@ -307,12 +324,23 @@ impl<'a> Chip8<'a> {
             } => self.op_8xy6(&opcode),
             Opcode {
                 category: 0x8,
+                n: 0x7,
+                ..
+            } => self.op_8xy7(&opcode),
+            Opcode {
+                category: 0x8,
                 n: 0xE,
                 ..
             } => self.op_8xye(&opcode),
             Opcode { category: 0x9, .. } => self.op_9xy0(&opcode),
             Opcode { category: 0xA, .. } => self.op_annn(&opcode),
             Opcode { category: 0xD, .. } => self.op_dxyn(&opcode),
+            Opcode {
+                category: 0xF,
+                y: 0x1,
+                n: 0xE,
+                ..
+            } => self.op_fx1e(&opcode),
             Opcode {
                 category: 0xF,
                 y: 0x3,
