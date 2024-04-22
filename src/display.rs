@@ -68,6 +68,7 @@ impl Display<'_> {
         queue!(
             self.stdout,
             cursor::MoveTo(x_coordinate, y_coordinate),
+            cursor::Hide,
             style::Print("▀"),
             ResetColor
         )
