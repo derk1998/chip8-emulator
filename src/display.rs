@@ -33,6 +33,7 @@ impl Display<'_> {
         }
 
         self.surface[x + y * self.width as usize] = 1;
+
         true
     }
 
@@ -44,35 +45,39 @@ impl Display<'_> {
         self.height
     }
 
+    pub fn draw_pixel(&mut self, x: u16, y: u16) {
+        if self.surface[(x + y * self.width) as usize] == 1 {
+            queue!(self.stdout, SetForegroundColor(Color::White))
+                .expect("Could not write to the buffer");
+        } else {
+            queue!(self.stdout, SetForegroundColor(Color::Black))
+                .expect("Could not write to the buffer");
+        }
+
+        if y < self.height - 1 && self.surface[(x + (y + 1) * self.width) as usize] == 1 {
+            queue!(self.stdout, SetBackgroundColor(Color::White))
+                .expect("Could not write to the buffer");
+        } else {
+            queue!(self.stdout, SetBackgroundColor(Color::Black))
+                .expect("Could not write to the buffer");
+        }
+
+        let y_coordinate = ((y as f32) / 2.0).floor() as u16;
+        let x_coordinate = x;
+
+        queue!(
+            self.stdout,
+            cursor::MoveTo(x_coordinate, y_coordinate),
+            style::Print("▀"),
+            ResetColor
+        )
+        .expect("Could not write to the buffer");
+    }
+
     pub fn display(&mut self) {
         for x in 0..self.width {
             for y in (0..self.height).step_by(2) {
-                if self.surface[(x + y * self.width) as usize] == 1 {
-                    queue!(self.stdout, SetForegroundColor(Color::White))
-                        .expect("Could not write to the buffer");
-                } else {
-                    queue!(self.stdout, SetForegroundColor(Color::Black))
-                        .expect("Could not write to the buffer");
-                }
-
-                if y < self.height - 1 && self.surface[(x + (y + 1) * self.width) as usize] == 1 {
-                    queue!(self.stdout, SetBackgroundColor(Color::White))
-                        .expect("Could not write to the buffer");
-                } else {
-                    queue!(self.stdout, SetBackgroundColor(Color::Black))
-                        .expect("Could not write to the buffer");
-                }
-
-                let y_coordinate = ((y as f32) / 2.0).floor() as u16;
-                let x_coordinate = x;
-
-                queue!(
-                    self.stdout,
-                    cursor::MoveTo(x_coordinate, y_coordinate),
-                    style::Print("▀"),
-                    ResetColor
-                )
-                .expect("Could not write to the buffer");
+                self.draw_pixel(x, y);
             }
         }
         self.stdout.flush().expect("Could not flush stdout");

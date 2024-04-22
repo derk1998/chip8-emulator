@@ -1,4 +1,81 @@
+use std::collections::VecDeque;
+
 use crate::display::{self, Display};
+
+#[derive(Clone)]
+pub enum Key {
+    Key0 = 0,
+    Key1,
+    Key2,
+    Key3,
+    Key4,
+    Key5,
+    Key6,
+    Key7,
+    Key8,
+    Key9,
+    KeyA,
+    KeyB,
+    KeyC,
+    KeyD,
+    KeyE,
+    KeyF,
+}
+
+pub struct Keypad {
+    keys: [bool; 16],
+    queued: Option<Key>,
+    timer: u8,
+    timer_started: bool,
+}
+
+impl Keypad {
+    pub fn new() -> Self {
+        Keypad {
+            keys: [false; 16],
+            queued: None,
+            timer: 0,
+            timer_started: false,
+        }
+    }
+
+    pub fn process(&mut self) {
+        if self.timer_started {
+            self.timer += 1;
+
+            if self.timer > 50 {
+                if self.queued.is_some() {
+                    self.keys[self.queued.clone().unwrap() as usize] = false;
+                    self.queued = None;
+                }
+                self.timer = 0;
+                self.timer_started = false;
+            }
+        }
+    }
+
+    pub fn key_down(&mut self, key: Key) {
+        self.keys[key as usize] = true;
+    }
+
+    pub fn key_up(&mut self, key: Key) {
+        self.queued = Some(key);
+        self.timer_started = true;
+    }
+
+    pub fn is_key_down(&self, key: u8) -> bool {
+        self.keys[key as usize]
+    }
+
+    pub fn get_any_key_down(&self) -> Option<u8> {
+        for i in 0..self.keys.len() {
+            if self.keys[i] {
+                return Some(i as u8);
+            }
+        }
+        None
+    }
+}
 
 pub struct ProgramCounter {
     counter: u16,
@@ -7,6 +84,10 @@ pub struct ProgramCounter {
 impl ProgramCounter {
     fn increment(&mut self) {
         self.counter += 2
+    }
+
+    fn decrement(&mut self) {
+        self.counter -= 2
     }
 
     fn set(&mut self, new_counter_value: u16) {
@@ -86,6 +167,26 @@ impl From<u16> for Opcode {
     }
 }
 
+pub struct Timer {
+    value: u8,
+}
+
+impl Timer {
+    pub fn tick(&mut self) {
+        if self.value > 0 {
+            self.value -= 1;
+        }
+    }
+
+    pub fn set(&mut self, value: u8) {
+        self.value = value;
+    }
+
+    pub fn get(&self) -> u8 {
+        return self.value;
+    }
+}
+
 pub struct Chip8<'a> {
     program_counter: ProgramCounter,
     memory: Memory,
@@ -93,6 +194,8 @@ pub struct Chip8<'a> {
     index_register: u16,
     stack: Stack,
     display: &'a mut Display<'a>,
+    delay_timer: Timer,
+    key_pad: Keypad,
 }
 
 impl<'a> Chip8<'a> {
@@ -104,6 +207,8 @@ impl<'a> Chip8<'a> {
             index_register: 0,
             stack: Stack { data: vec![] },
             display,
+            delay_timer: Timer { value: 0 },
+            key_pad: Keypad::new(),
         }
     }
 
@@ -155,14 +260,17 @@ impl<'a> Chip8<'a> {
     }
 
     fn op_8xy1(&mut self, opcode: &Opcode) {
+        self.registers[0xF] = 0;
         self.registers[opcode.x] |= self.registers[opcode.y];
     }
 
     fn op_8xy2(&mut self, opcode: &Opcode) {
+        self.registers[0xF] = 0;
         self.registers[opcode.x] &= self.registers[opcode.y];
     }
 
     fn op_8xy3(&mut self, opcode: &Opcode) {
+        self.registers[0xF] = 0;
         self.registers[opcode.x] ^= self.registers[opcode.y];
     }
 
@@ -212,16 +320,29 @@ impl<'a> Chip8<'a> {
         self.index_register = opcode.nnn();
     }
 
+    fn op_bnnn(&mut self, opcode: &Opcode) {
+        self.program_counter
+            .set(opcode.nnn() + self.registers[0] as u16);
+    }
+
     fn op_dxyn(&mut self, opcode: &Opcode) {
         let x = self.registers[opcode.x] as u16 % self.display.width();
         let y = self.registers[opcode.y] as u16 % self.display.height();
         self.registers[0xF] = 0;
 
         for row in 0..opcode.n {
+            if y + row as u16 >= self.display.height() {
+                break;
+            }
+
             let sprite_byte = self.memory.get_as_u8(self.index_register + row as u16);
 
             for col in 0..8 {
                 let pixel = (sprite_byte & (0x80 >> col)) >> 7 - col;
+
+                if x + col as u16 >= self.display.width() {
+                    break;
+                }
 
                 if pixel == 1 {
                     if !self
@@ -234,6 +355,39 @@ impl<'a> Chip8<'a> {
             }
         }
         self.display.display();
+    }
+
+    fn op_ex9e(&mut self, opcode: &Opcode) {
+        if self.key_pad.is_key_down(self.registers[opcode.x]) {
+            self.program_counter.increment();
+        }
+
+        self.key_pad.process();
+    }
+
+    fn op_exa1(&mut self, opcode: &Opcode) {
+        if !self.key_pad.is_key_down(self.registers[opcode.x]) {
+            self.program_counter.increment();
+        }
+
+        self.key_pad.process();
+    }
+
+    fn op_fx07(&mut self, opcode: &Opcode) {
+        self.registers[opcode.x] = self.delay_timer.get();
+    }
+
+    fn op_fx0a(&mut self, opcode: &Opcode) {
+        let res = self.key_pad.get_any_key_down();
+        if res.is_some() {
+            self.registers[opcode.x] = res.unwrap();
+        } else {
+            self.program_counter.decrement();
+        }
+    }
+
+    fn op_fx15(&mut self, opcode: &Opcode) {
+        self.delay_timer.set(self.registers[opcode.x]);
     }
 
     fn op_fx1e(&mut self, opcode: &Opcode) {
@@ -254,14 +408,24 @@ impl<'a> Chip8<'a> {
     fn op_fx55(&mut self, opcode: &Opcode) {
         for i in 0..=opcode.x {
             self.memory
-                .set(self.index_register + i as u16, self.registers[i]);
+                .set(self.index_register as u16, self.registers[i]);
+            self.index_register += 1;
         }
     }
 
     fn op_fx65(&mut self, opcode: &Opcode) {
         for i in 0..=opcode.x {
-            self.registers[i] = self.memory.get_as_u8(self.index_register + i as u16);
+            self.registers[i] = self.memory.get_as_u8(self.index_register as u16);
+            self.index_register += 1;
         }
+    }
+
+    pub fn handle_key_up(&mut self, key: Key) {
+        self.key_pad.key_up(key);
+    }
+
+    pub fn handle_key_down(&mut self, key: Key) {
+        self.key_pad.key_down(key);
     }
 
     pub fn emulate_cycle(&mut self) {
@@ -334,7 +498,38 @@ impl<'a> Chip8<'a> {
             } => self.op_8xye(&opcode),
             Opcode { category: 0x9, .. } => self.op_9xy0(&opcode),
             Opcode { category: 0xA, .. } => self.op_annn(&opcode),
+            Opcode { category: 0xB, .. } => self.op_bnnn(&opcode),
             Opcode { category: 0xD, .. } => self.op_dxyn(&opcode),
+            Opcode {
+                category: 0xE,
+                y: 0x9,
+                n: 0xE,
+                ..
+            } => self.op_ex9e(&opcode),
+            Opcode {
+                category: 0xE,
+                y: 0xA,
+                n: 0x1,
+                ..
+            } => self.op_exa1(&opcode),
+            Opcode {
+                category: 0xF,
+                y: 0x0,
+                n: 0x7,
+                ..
+            } => self.op_fx07(&opcode),
+            Opcode {
+                category: 0xF,
+                y: 0x0,
+                n: 0xA,
+                ..
+            } => self.op_fx0a(&opcode),
+            Opcode {
+                category: 0xF,
+                y: 0x1,
+                n: 0x5,
+                ..
+            } => self.op_fx15(&opcode),
             Opcode {
                 category: 0xF,
                 y: 0x1,
@@ -364,7 +559,8 @@ impl<'a> Chip8<'a> {
             }
         }
 
-        //update timers
+        self.delay_timer.tick();
+        self.key_pad.process();
     }
 
     fn fetch(&mut self) -> Opcode {
