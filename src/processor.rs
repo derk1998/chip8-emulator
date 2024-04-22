@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::display::{self, Display};
+use rand::Rng;
 
 #[derive(Clone)]
 pub enum Key {
@@ -321,6 +322,10 @@ impl<'a> Chip8<'a> {
             .set(opcode.nnn() + self.registers[0] as u16);
     }
 
+    fn op_cxkk(&mut self, opcode: &Opcode) {
+        self.registers[opcode.x] = rand::random::<u8>() & opcode.kk();
+    }
+
     fn op_dxyn(&mut self, opcode: &Opcode) {
         let x = self.registers[opcode.x] as u16 % self.display.width();
         let y = self.registers[opcode.y] as u16 % self.display.height();
@@ -388,6 +393,10 @@ impl<'a> Chip8<'a> {
 
     fn op_fx1e(&mut self, opcode: &Opcode) {
         self.index_register += self.registers[opcode.x] as u16;
+    }
+
+    fn op_fx29(&mut self, opcode: &Opcode) {
+        self.index_register = (self.registers[opcode.x] * 5 + 0x50) as u16;
     }
 
     fn op_fx33(&mut self, opcode: &Opcode) {
@@ -495,6 +504,7 @@ impl<'a> Chip8<'a> {
             Opcode { category: 0x9, .. } => self.op_9xy0(&opcode),
             Opcode { category: 0xA, .. } => self.op_annn(&opcode),
             Opcode { category: 0xB, .. } => self.op_bnnn(&opcode),
+            Opcode { category: 0xC, .. } => self.op_cxkk(&opcode),
             Opcode { category: 0xD, .. } => self.op_dxyn(&opcode),
             Opcode {
                 category: 0xE,
@@ -538,6 +548,12 @@ impl<'a> Chip8<'a> {
                 n: 0xE,
                 ..
             } => self.op_fx1e(&opcode),
+            Opcode {
+                category: 0xF,
+                y: 0x2,
+                n: 0x9,
+                ..
+            } => self.op_fx29(&opcode),
             Opcode {
                 category: 0xF,
                 y: 0x3,
