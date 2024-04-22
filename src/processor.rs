@@ -24,33 +24,14 @@ pub enum Key {
 
 pub struct Keypad {
     keys: [bool; 16],
-    queued: Option<Key>,
-    timer: u8,
-    timer_started: bool,
+    save_key: Option<u8>,
 }
 
 impl Keypad {
     pub fn new() -> Self {
         Keypad {
             keys: [false; 16],
-            queued: None,
-            timer: 0,
-            timer_started: false,
-        }
-    }
-
-    pub fn process(&mut self) {
-        if self.timer_started {
-            self.timer += 1;
-
-            if self.timer > 50 {
-                if self.queued.is_some() {
-                    self.keys[self.queued.clone().unwrap() as usize] = false;
-                    self.queued = None;
-                }
-                self.timer = 0;
-                self.timer_started = false;
-            }
+            save_key: None,
         }
     }
 
@@ -59,12 +40,24 @@ impl Keypad {
     }
 
     pub fn key_up(&mut self, key: Key) {
-        self.queued = Some(key);
-        self.timer_started = true;
+        self.keys[key as usize] = false;
     }
 
     pub fn is_key_down(&self, key: u8) -> bool {
         self.keys[key as usize]
+    }
+
+    pub fn get_any_key_up(&mut self) -> Option<u8> {
+        let mut key: Option<u8> = None;
+        if self.save_key.is_none() {
+            self.save_key = self.get_any_key_down();
+        } else {
+            if !self.is_key_down(self.save_key.unwrap() as u8) {
+                key = self.save_key;
+                self.save_key = None;
+            }
+        }
+        key
     }
 
     pub fn get_any_key_down(&self) -> Option<u8> {
@@ -73,6 +66,7 @@ impl Keypad {
                 return Some(i as u8);
             }
         }
+
         None
     }
 }
@@ -361,16 +355,12 @@ impl<'a> Chip8<'a> {
         if self.key_pad.is_key_down(self.registers[opcode.x]) {
             self.program_counter.increment();
         }
-
-        self.key_pad.process();
     }
 
     fn op_exa1(&mut self, opcode: &Opcode) {
         if !self.key_pad.is_key_down(self.registers[opcode.x]) {
             self.program_counter.increment();
         }
-
-        self.key_pad.process();
     }
 
     fn op_fx07(&mut self, opcode: &Opcode) {
@@ -378,7 +368,7 @@ impl<'a> Chip8<'a> {
     }
 
     fn op_fx0a(&mut self, opcode: &Opcode) {
-        let res = self.key_pad.get_any_key_down();
+        let res = self.key_pad.get_any_key_up();
         if res.is_some() {
             self.registers[opcode.x] = res.unwrap();
         } else {
@@ -560,7 +550,6 @@ impl<'a> Chip8<'a> {
         }
 
         self.delay_timer.tick();
-        self.key_pad.process();
     }
 
     fn fetch(&mut self) -> Opcode {
