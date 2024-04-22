@@ -49,7 +49,7 @@ fn main() {
     let mut memory: [u8; 4096] = [0; 4096];
     load_font(&mut memory);
 
-    let mut file = File::open("6-keypad.ch8").expect("no such file found");
+    let mut file = File::open("7-beep.ch8").expect("no such file found");
     let mut file_buffer = vec![];
     let res = file.read_to_end(&mut file_buffer);
     memory[0x200..(0x200 + file_buffer.len())].clone_from_slice(&file_buffer);
@@ -121,5 +121,6 @@ fn main() {
         }
 
         chip8.emulate_cycle();
+        thread::sleep(Duration::from_millis(3));
     }
 }

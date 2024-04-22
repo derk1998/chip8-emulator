@@ -189,6 +189,7 @@ pub struct Chip8<'a> {
     stack: Stack,
     display: &'a mut Display<'a>,
     delay_timer: Timer,
+    sound_timer: Timer,
     key_pad: Keypad,
 }
 
@@ -202,6 +203,7 @@ impl<'a> Chip8<'a> {
             stack: Stack { data: vec![] },
             display,
             delay_timer: Timer { value: 0 },
+            sound_timer: Timer { value: 0 },
             key_pad: Keypad::new(),
         }
     }
@@ -380,6 +382,10 @@ impl<'a> Chip8<'a> {
         self.delay_timer.set(self.registers[opcode.x]);
     }
 
+    fn op_fx18(&mut self, opcode: &Opcode) {
+        self.sound_timer.set(self.registers[opcode.x]);
+    }
+
     fn op_fx1e(&mut self, opcode: &Opcode) {
         self.index_register += self.registers[opcode.x] as u16;
     }
@@ -523,6 +529,12 @@ impl<'a> Chip8<'a> {
             Opcode {
                 category: 0xF,
                 y: 0x1,
+                n: 0x8,
+                ..
+            } => self.op_fx18(&opcode),
+            Opcode {
+                category: 0xF,
+                y: 0x1,
                 n: 0xE,
                 ..
             } => self.op_fx1e(&opcode),
@@ -550,6 +562,7 @@ impl<'a> Chip8<'a> {
         }
 
         self.delay_timer.tick();
+        self.sound_timer.tick();
     }
 
     fn fetch(&mut self) -> Opcode {
