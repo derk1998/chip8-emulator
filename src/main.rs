@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{self, Read};
 use std::thread;
 use std::time::Duration;
 use std::{fs::File, io::stdout};
@@ -37,24 +37,33 @@ fn load_font(memory: &mut [u8]) {
     memory[0x50..(0x50 + font.len())].clone_from_slice(&font);
 }
 
-fn main() {
-    let mut stdout = stdout();
-    stdout
-        .execute(terminal::EnterAlternateScreen)
-        .expect("Could not enter alternate buffer");
+fn read_rom(file_path: &str, memory: &mut [u8]) -> Result<Vec<u8>, io::Error> {
+    let mut file = match File::open(file_path) {
+        Ok(file) => file,
+        Err(e) => return Err(e),
+    };
 
-    let width: u16 = 64;
-    let height: u16 = 32;
+    let mut file_buffer = vec![];
+    match file.read_to_end(&mut file_buffer) {
+        Ok(_) => return Ok(file_buffer),
+        Err(e) => return Err(e),
+    }
+}
 
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut memory: [u8; 4096] = [0; 4096];
     load_font(&mut memory);
+    let args: Vec<String> = std::env::args().collect();
 
-    let mut file = File::open("7-beep.ch8").expect("no such file found");
-    let mut file_buffer = vec![];
-    let res = file.read_to_end(&mut file_buffer);
-    memory[0x200..(0x200 + file_buffer.len())].clone_from_slice(&file_buffer);
+    if args.len() == 1 {
+        return Err("Expected filename as argument".into());
+    }
 
-    let mut display = Display::new(&mut stdout, width, height);
+    let rom = read_rom(&args[1], &mut memory)?;
+
+    memory[0x200..(0x200 + rom.len())].clone_from_slice(&rom);
+
+    let mut display = Display::new(64, 32);
 
     let mut chip8 = Chip8::new(&mut display, Memory { data: memory });
 
@@ -66,9 +75,6 @@ fn main() {
                 event::Event::Key(KeyEvent {
                     code: KeyCode::Esc, ..
                 }) => {
-                    stdout
-                        .execute(terminal::LeaveAlternateScreen)
-                        .expect("Could not leave the alternate buffer");
                     break;
                 }
                 event::Event::Key(KeyEvent {
@@ -123,4 +129,5 @@ fn main() {
         chip8.emulate_cycle();
         thread::sleep(Duration::from_millis(3));
     }
+    Ok(())
 }

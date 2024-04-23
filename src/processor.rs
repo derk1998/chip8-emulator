@@ -188,14 +188,14 @@ pub struct Chip8<'a> {
     registers: [u8; 16],
     index_register: u16,
     stack: Stack,
-    display: &'a mut Display<'a>,
+    display: &'a mut Display,
     delay_timer: Timer,
     sound_timer: Timer,
     key_pad: Keypad,
 }
 
 impl<'a> Chip8<'a> {
-    pub fn new(display: &'a mut Display<'a>, memory: Memory) -> Chip8<'a> {
+    pub fn new(display: &mut Display, memory: Memory) -> Chip8 {
         Chip8 {
             program_counter: ProgramCounter { counter: 0x200 },
             memory,

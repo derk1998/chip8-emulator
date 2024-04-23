@@ -1,21 +1,24 @@
-use std::{io::Write, os::windows};
+use std::io::{stdout, Write};
 
 use crossterm::{
     cursor, queue,
     style::{self, Color, ResetColor, SetBackgroundColor, SetForegroundColor},
+    terminal, ExecutableCommand,
 };
 
-pub struct Display<'a> {
-    stdout: &'a std::io::Stdout,
+pub struct Display {
     width: u16,
     height: u16,
     surface: Vec<u8>,
 }
 
-impl Display<'_> {
-    pub fn new(stdout: &std::io::Stdout, width: u16, height: u16) -> Display {
+impl Display {
+    pub fn new(width: u16, height: u16) -> Display {
+        stdout()
+            .execute(terminal::EnterAlternateScreen)
+            .expect("Could not enter alternate buffer");
+
         Display {
-            stdout,
             width,
             height,
             surface: vec![0_u8; (width * height).into()],
@@ -47,18 +50,18 @@ impl Display<'_> {
 
     pub fn draw_pixel(&mut self, x: u16, y: u16) {
         if self.surface[(x + y * self.width) as usize] == 1 {
-            queue!(self.stdout, SetForegroundColor(Color::White))
+            queue!(stdout(), SetForegroundColor(Color::White))
                 .expect("Could not write to the buffer");
         } else {
-            queue!(self.stdout, SetForegroundColor(Color::Black))
+            queue!(stdout(), SetForegroundColor(Color::Black))
                 .expect("Could not write to the buffer");
         }
 
         if y < self.height - 1 && self.surface[(x + (y + 1) * self.width) as usize] == 1 {
-            queue!(self.stdout, SetBackgroundColor(Color::White))
+            queue!(stdout(), SetBackgroundColor(Color::White))
                 .expect("Could not write to the buffer");
         } else {
-            queue!(self.stdout, SetBackgroundColor(Color::Black))
+            queue!(stdout(), SetBackgroundColor(Color::Black))
                 .expect("Could not write to the buffer");
         }
 
@@ -66,7 +69,7 @@ impl Display<'_> {
         let x_coordinate = x;
 
         queue!(
-            self.stdout,
+            stdout(),
             cursor::MoveTo(x_coordinate, y_coordinate),
             cursor::Hide,
             style::Print("▀"),
@@ -81,6 +84,14 @@ impl Display<'_> {
                 self.draw_pixel(x, y);
             }
         }
-        self.stdout.flush().expect("Could not flush stdout");
+        stdout().flush().expect("Could not flush stdout");
+    }
+}
+
+impl Drop for Display {
+    fn drop(&mut self) {
+        stdout()
+            .execute(terminal::LeaveAlternateScreen)
+            .expect("Could not leave the alternate buffer");
     }
 }
