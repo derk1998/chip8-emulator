@@ -1,18 +1,26 @@
+use std::fs::File;
 use std::io::{self, Read};
 use std::thread;
 use std::time::Duration;
-use std::{fs::File, io::stdout};
 
+use crossterm::event;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
-use crossterm::{cursor, event, queue, style, terminal, ExecutableCommand};
 
 mod display;
+mod keypad;
+mod memory;
+mod opcode;
+mod program_counter;
+mod stack;
+mod timer;
 
 use display::Display;
 
 mod processor;
 
-use processor::{Chip8, Key, Keypad, Memory};
+use keypad::Key;
+use memory::Memory;
+use processor::Chip8;
 
 fn load_font(memory: &mut [u8]) {
     let font = [
@@ -37,7 +45,7 @@ fn load_font(memory: &mut [u8]) {
     memory[0x50..(0x50 + font.len())].clone_from_slice(&font);
 }
 
-fn read_rom(file_path: &str, memory: &mut [u8]) -> Result<Vec<u8>, io::Error> {
+fn read_rom(file_path: &str) -> Result<Vec<u8>, io::Error> {
     let mut file = match File::open(file_path) {
         Ok(file) => file,
         Err(e) => return Err(e),
@@ -59,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Expected filename as argument".into());
     }
 
-    let rom = read_rom(&args[1], &mut memory)?;
+    let rom = read_rom(&args[1])?;
 
     memory[0x200..(0x200 + rom.len())].clone_from_slice(&rom);
 

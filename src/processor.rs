@@ -1,186 +1,12 @@
-use std::collections::VecDeque;
-
-use crate::display::{self, Display};
-use rand::Rng;
-
-#[derive(Clone)]
-pub enum Key {
-    Key0 = 0,
-    Key1,
-    Key2,
-    Key3,
-    Key4,
-    Key5,
-    Key6,
-    Key7,
-    Key8,
-    Key9,
-    KeyA,
-    KeyB,
-    KeyC,
-    KeyD,
-    KeyE,
-    KeyF,
-}
-
-pub struct Keypad {
-    keys: [bool; 16],
-    save_key: Option<u8>,
-}
-
-impl Keypad {
-    pub fn new() -> Self {
-        Keypad {
-            keys: [false; 16],
-            save_key: None,
-        }
-    }
-
-    pub fn key_down(&mut self, key: Key) {
-        self.keys[key as usize] = true;
-    }
-
-    pub fn key_up(&mut self, key: Key) {
-        self.keys[key as usize] = false;
-    }
-
-    pub fn is_key_down(&self, key: u8) -> bool {
-        self.keys[key as usize]
-    }
-
-    pub fn get_any_key_up(&mut self) -> Option<u8> {
-        let mut key: Option<u8> = None;
-        if self.save_key.is_none() {
-            self.save_key = self.get_any_key_down();
-        } else {
-            if !self.is_key_down(self.save_key.unwrap() as u8) {
-                key = self.save_key;
-                self.save_key = None;
-            }
-        }
-        key
-    }
-
-    pub fn get_any_key_down(&self) -> Option<u8> {
-        for i in 0..self.keys.len() {
-            if self.keys[i] {
-                return Some(i as u8);
-            }
-        }
-
-        None
-    }
-}
-
-pub struct ProgramCounter {
-    counter: u16,
-}
-
-impl ProgramCounter {
-    fn increment(&mut self) {
-        self.counter += 2
-    }
-
-    fn decrement(&mut self) {
-        self.counter -= 2
-    }
-
-    fn set(&mut self, new_counter_value: u16) {
-        self.counter = new_counter_value;
-    }
-
-    fn get(&self) -> u16 {
-        return self.counter;
-    }
-}
-
-pub struct Stack {
-    data: Vec<u16>,
-}
-
-impl Stack {
-    fn push(&mut self, data: u16) {
-        self.data.push(data);
-    }
-
-    fn pop(&mut self) -> u16 {
-        let value = self.data.pop().unwrap();
-
-        value
-    }
-}
-
-pub struct Memory {
-    pub data: [u8; 4096],
-}
-
-impl Memory {
-    fn get_as_u16(&self, location: u16) -> u16 {
-        u16::from(self.data[usize::from(location)]) << 8
-            | u16::from(self.data[usize::from(location + 1)])
-    }
-
-    fn get_as_u8(&self, location: u16) -> u8 {
-        self.data[usize::from(location)]
-    }
-
-    fn set(&mut self, location: u16, data: u8) {
-        self.data[usize::from(location)] = data;
-    }
-}
-
-pub struct Opcode {
-    category: u8,
-    x: usize,
-    y: usize,
-    n: u8,
-}
-
-impl Opcode {
-    fn kk(&self) -> u8 {
-        (self.y as u8) << 4 | self.n
-    }
-
-    fn nnn(&self) -> u16 {
-        (self.x << 8) as u16 | (self.y << 4) as u16 | u16::from(self.n)
-    }
-}
-
-impl From<u16> for Opcode {
-    fn from(value: u16) -> Self {
-        let nibble_1 = ((value & 0xF000) >> 12) as u8;
-        let nibble_2 = ((value & 0x0F00) >> 8) as u8;
-        let nibble_3 = ((value & 0x00F0) >> 4) as u8;
-        let nibble_4 = (value & 0x000F) as u8;
-
-        Opcode {
-            category: nibble_1,
-            x: nibble_2 as usize,
-            y: nibble_3 as usize,
-            n: nibble_4,
-        }
-    }
-}
-
-pub struct Timer {
-    value: u8,
-}
-
-impl Timer {
-    pub fn tick(&mut self) {
-        if self.value > 0 {
-            self.value -= 1;
-        }
-    }
-
-    pub fn set(&mut self, value: u8) {
-        self.value = value;
-    }
-
-    pub fn get(&self) -> u8 {
-        return self.value;
-    }
-}
+use crate::{
+    display::Display,
+    keypad::{Key, Keypad},
+    memory::Memory,
+    opcode::Opcode,
+    program_counter::ProgramCounter,
+    stack::Stack,
+    timer::Timer,
+};
 
 pub struct Chip8<'a> {
     program_counter: ProgramCounter,
@@ -197,14 +23,14 @@ pub struct Chip8<'a> {
 impl<'a> Chip8<'a> {
     pub fn new(display: &mut Display, memory: Memory) -> Chip8 {
         Chip8 {
-            program_counter: ProgramCounter { counter: 0x200 },
+            program_counter: ProgramCounter::new(),
             memory,
             registers: [0; 16],
             index_register: 0,
-            stack: Stack { data: vec![] },
+            stack: Stack::new(),
             display,
-            delay_timer: Timer { value: 0 },
-            sound_timer: Timer { value: 0 },
+            delay_timer: Timer::new(),
+            sound_timer: Timer::new(),
             key_pad: Keypad::new(),
         }
     }
@@ -284,7 +110,6 @@ impl<'a> Chip8<'a> {
     }
 
     fn op_8xy6(&mut self, opcode: &Opcode) {
-        //todo: should be configurable
         self.registers[opcode.x] = self.registers[opcode.y];
 
         let lsb = self.registers[opcode.x] & 0x1;
@@ -299,7 +124,6 @@ impl<'a> Chip8<'a> {
     }
 
     fn op_8xye(&mut self, opcode: &Opcode) {
-        //todo: should be configurable
         self.registers[opcode.x] = self.registers[opcode.y];
 
         let msb = (self.registers[opcode.x] & 0x80) >> 7;
